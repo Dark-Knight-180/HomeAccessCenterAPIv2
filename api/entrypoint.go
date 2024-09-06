@@ -181,7 +181,7 @@ func getAssignments(c *gin.Context) {
 		}
 		return
 	}
-
+/*
 	classes := make([]string, 0)
 	averages := make([]string, 0)
 
@@ -228,6 +228,8 @@ func getAssignments(c *gin.Context) {
 			finaldata["assignment"] = append(finaldata["assignment"].([][][]string), [][]string{})
 			finaldata["categories"] = append(finaldata["categories"].([][][]string), [][]string{})
 		}
+
+  */
 	})
 
 	collector.OnScraped(func(r *colly.Response) {
