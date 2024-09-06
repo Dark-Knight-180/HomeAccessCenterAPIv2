@@ -168,142 +168,89 @@ func getName(c *gin.Context) {
 }
 
 func getAssignments(c *gin.Context) {
-    username := c.Query("user")
-    password := c.Query("pass")
-    link := c.DefaultQuery("link", "https://home-access.cfisd.net")
-    
-    // Login handler
-    collector, err := loginHandler(username, password, link)
-    if err != nil {
-        if err.Error() == "Invalid username or password" {
-            c.JSON(401, gin.H{"error": "Invalid username or password"})
-        } else {
-            c.JSON(500, gin.H{"error": "Failed to log in"})
-        }
-        return
-    }
+	username := c.Query("user")
+	password := c.Query("pass")
+	link := c.DefaultQuery("link", "https://home-access.cfisd.net")
+	collector, err := loginHandler(username, password, link)
+	if err != nil {
+		// Handle the login error
+		if err.Error() == "Invalid username or password" {
+			c.JSON(401, gin.H{"error": "Invalid username or password"})
+		} else {
+			c.JSON(500, gin.H{"error": "Failed to log in"})
+		}
+		return
+	}
 
-    // Initialize data structures for classes and averages
-    classes := make([]string, 0)
-    averages := make([]string, 0)
-    
-    // HTML parsing for the classes and averages
-    collector.OnHTML("div.AssignmentClass", func(e *colly.HTMLElement) {
-        // Parse class name
-        classArr := strings.Split(strings.Join(strings.Fields(e.ChildText("div.sg-header")), " "), " ")
-        if len(classArr) >= 6 {
-            class := strings.Join(classArr[3:len(classArr)-3], " ")
-            classes = append(classes, class)
-        } else {
-            log.Println("Failed to parse class name from AssignmentClass div")
-        }
+	classes := make([]string, 0)
+	averages := make([]string, 0)
 
-        // Parse average
-        averageText := e.ChildText("span.sg-header-heading")
-        if len(averageText) > 18 {
-            average := averageText[18:]
-            averages = append(averages, average)
-        } else {
-            averages = append(averages, "N/A")
-            log.Println("Failed to parse average from AssignmentClass div")
-        }
-    })
+	collector.OnHTML("div.AssignmentClass", func(e *colly.HTMLElement) {
+		classArr := strings.Split(strings.Join(strings.Fields(e.ChildText("div.sg-header")), " "), " ")
+		class := strings.Join(classArr[3:len(classArr)-3], " ")
+		classes = append(classes, class)
+		average := e.ChildText("span.sg-header-heading")[18:]
+		averages = append(averages, average)
+	})
 
-    // Initialize final data structure
-    finaldata := make(map[string]interface{})
-    finaldata["assignment"] = make([][][]string, 0)
-    finaldata["categories"] = make([][][]string, 0)
-    finaldata["classes"] = classes
-    finaldata["averages"] = averages
+	assignmentstable := make([][]string, 0)
+	assignmentsrow := make([]string, 0)
 
-    // HTML parsing for assignments and categories
-    collector.OnHTML("div.AssignmentClass", func(e *colly.HTMLElement) {
-        table := e.DOM.Find("table.sg-asp-table")
-        if table.Length() > 0 {
-            table.Each(func(_ int, j *goquery.Selection) {
-                assignmentstable := make([][]string, 0)
-                
-                // Iterate through each row in the table
-                j.Find("tr").Each(func(_ int, row *goquery.Selection) {
-                    assignmentsrow := make([]string, 0)
-                    
-                    // Get each cell (td) within the row
-                    row.Find("td").Each(func(_ int, element *goquery.Selection) {
-                        text := strings.TrimSpace(element.Text())
-                        text = strings.ReplaceAll(text, "*", "")
-                        assignmentsrow = append(assignmentsrow, text)
-                    })
-                    
-                    // Append the row to the table
-                    assignmentstable = append(assignmentstable, assignmentsrow)
-                })
-                
-                // Separate categories from assignments based on table ID
-                if strings.Contains(j.AttrOr("id", ""), "CourseCategories") {
-                    finaldata["categories"] = append(finaldata["categories"].([][][]string), assignmentstable)
-                } else if strings.Contains(j.AttrOr("id", ""), "CourseAssignments") {
-                    finaldata["assignment"] = append(finaldata["assignment"].([][][]string), assignmentstable)
-                }
-            })
-        } else {
-            // If no table is found, add empty arrays
-            log.Println("No assignment or category table found")
-            finaldata["assignment"] = append(finaldata["assignment"].([][][]string), [][]string{})
-            finaldata["categories"] = append(finaldata["categories"].([][][]string), [][]string{})
-        }
-    })
+	finaldata := make(map[string]interface{})
+	finaldata["assignment"] = make([][][]string, 0)
+	finaldata["categories"] = make([][][]string, 0)
+	finaldata["classes"] = classes
+	finaldata["averages"] = averages
 
-    // After scraping completes
-    collector.OnScraped(func(r *colly.Response) {
-        // Initialize the response object
-        ret := make(map[string]interface{})
+	collector.OnHTML("div.AssignmentClass", func(e *colly.HTMLElement) {
+		table := e.DOM.Find("table.sg-asp-table")
+		if table.Length() > 0 {
+			table.Each(func(_ int, j *goquery.Selection) {
+				assignmentstable = nil
+				j.Find("tr").Each(func(_ int, row *goquery.Selection) {
+					assignmentsrow = nil
+					row.Find("td").Each(func(_ int, element *goquery.Selection) {
+						text := strings.TrimSpace(element.Text())
+						text = strings.ReplaceAll(text, "*", "")
+						assignmentsrow = append(assignmentsrow, text)
+					})
+					assignmentstable = append(assignmentstable, assignmentsrow)
+				})
 
-        // Ensure classes and averages arrays are of the same length
-        if len(classes) != len(averages) {
-            log.Println("Mismatch in number of classes and averages")
-        }
+				if strings.Contains(j.AttrOr("id", ""), "CourseCategories") {
+					finaldata["categories"] = append(finaldata["categories"].([][][]string), assignmentstable)
+				} else if strings.Contains(j.AttrOr("id", ""), "CourseAssignments") {
+					finaldata["assignment"] = append(finaldata["assignment"].([][][]string), assignmentstable)
+				}
+			})
+		} else {
+			finaldata["assignment"] = append(finaldata["assignment"].([][][]string), [][]string{})
+			finaldata["categories"] = append(finaldata["categories"].([][][]string), [][]string{})
+		}
+	})
 
-        for i := 0; i < len(classes); i++ {
-            classData := make(map[string]interface{})
-            classData["average"] = averages[i]
+	collector.OnScraped(func(r *colly.Response) {
+		ret := make(map[string]interface{})
+		for i := 0; i < len(classes); i++ {
+			average := averages[i]
+			assig := finaldata["assignment"].([][][]string)[i]
+			categories := finaldata["categories"].([][][]string)[i]
+			l := make(map[string]interface{})
+			l["average"] = average
+			l["assignments"] = assig
+			l["categories"] = categories
+			ret[classes[i]] = l
+		}
 
-            // Safely extract assignments and categories, check index bounds
-            if i < len(finaldata["assignment"].([][][]string)) {
-                classData["assignments"] = finaldata["assignment"].([][][]string)[i]
-            } else {
-                classData["assignments"] = [][]string{}
-                log.Println("No assignments found for class", classes[i])
-            }
+		c.JSON(200, ret)
+	})
 
-            if i < len(finaldata["categories"].([][][]string)) {
-                classData["categories"] = finaldata["categories"].([][][]string)[i]
-            } else {
-                classData["categories"] = [][]string{}
-                log.Println("No categories found for class", classes[i])
-            }
-
-            ret[classes[i]] = classData
-        }
-
-        // Return the final JSON response
-        c.JSON(200, ret)
-    })
-
-    // Visit the assignments page
-    err = collector.Visit(link + "/HomeAccess/Content/Student/Assignments.aspx")
-    if err != nil {
-        log.Printf("Failed to visit assignments page: %v", err)
-        c.JSON(500, gin.H{"error": "Failed to scrape data"})
-        return
-    }
-    
-    // Handle any additional errors encountered during scraping
-    collector.OnError(func(_ *colly.Response, err error) {
-        log.Printf("Scraping error: %v", err)
-        c.JSON(500, gin.H{"error": "Scraping failed: " + err.Error()})
-    })
+	err = collector.Visit(link + "/HomeAccess/Content/Student/Assignments.aspx")
+	if err != nil {
+		c.JSON(500, gin.H{"error": "Failed to scrape data"})
+		return
+	}
 }
-
 
 func getInfo(c *gin.Context) {
 	username := c.Query("user")
