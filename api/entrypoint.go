@@ -204,6 +204,10 @@ func getAssignments(c *gin.Context) {
 
 	collector.OnHTML("div.AssignmentClass", func(e *colly.HTMLElement) {
 		table := e.DOM.Find("table.sg-asp-table")
+		fmt.Println(table)
+		if table.Length() == 0 {
+  			log.Println("No assignments table found.")
+		}
 		if table.Length() > 0 {
 			table.Each(func(_ int, j *goquery.Selection) {
 				assignmentstable = nil
